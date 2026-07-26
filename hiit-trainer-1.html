@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Loopband HIIT</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    overflow: hidden;
+  }
+  body {
+    display: flex; align-items: center; justify-content: center;
+    background: #33473A; transition: background 0.8s ease;
+    color: #F5EFE1;
+  }
+  #app {
+    width: 100%; max-width: 420px; padding: 24px;
+    display: flex; flex-direction: column; align-items: center;
+    text-align: center;
+  }
+  .eyebrow {
+    font-size: 15px; letter-spacing: 0.18em; text-transform: uppercase;
+    opacity: 0.75; margin-bottom: 8px; font-weight: 700;
+  }
+  h1 { font-size: 28px; font-weight: 800; margin: 0 0 24px 0; }
+  .variant-card {
+    width: 100%; background: rgba(255,255,255,0.1);
+    border: 1px solid rgba(255,255,255,0.25); border-radius: 18px;
+    padding: 18px 20px; margin-bottom: 14px; text-align: left;
+    color: #F5EFE1; cursor: pointer; font-family: inherit;
+  }
+  .variant-card.selected { border-color: #F5EFE1; background: rgba(255,255,255,0.18); }
+  .variant-title { font-size: 19px; font-weight: 800; margin-bottom: 4px; }
+  .variant-sub { font-size: 14px; opacity: 0.8; }
+  .start-btn {
+    margin-top: 10px; width: 100%; background: #F5EFE1; color: #20302A;
+    border: none; border-radius: 18px; padding: 18px 20px;
+    font-size: 19px; font-weight: 800; cursor: pointer; display: none;
+    font-family: inherit;
+  }
+  .voice-toggle {
+    margin-top: 20px; background: transparent; border: none;
+    color: #F5EFE1; opacity: 0.75; font-size: 14px; cursor: pointer;
+    font-family: inherit;
+  }
+  .ring-wrap { position: relative; width: 280px; height: 280px; display: none; align-items: center; justify-content: center; }
+  .ring-center { position: absolute; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+  .animal-emoji { font-size: 68px; line-height: 1; }
+  .animal-name { font-size: 20px; font-weight: 800; letter-spacing: 0.04em; margin-top: 2px; }
+  .phase-icon { font-size: 60px; }
+  .timer { font-size: 32px; font-weight: 700; margin-top: 8px; font-variant-numeric: tabular-nums; }
+  .action { font-size: 22px; font-weight: 800; margin-top: 18px; min-height: 28px; }
+  .instr { font-size: 15px; font-weight: 600; margin-top: 4px; opacity: 0.75; min-height: 18px; }
+  .round-count { font-size: 14px; opacity: 0.7; margin-top: 6px; min-height: 18px; }
+  .next { font-size: 14px; opacity: 0.65; margin-top: 22px; min-height: 18px; }
+  .done-msg { font-size: 22px; font-weight: 800; margin-top: 18px; }
+  .controls { display: none; gap: 14px; margin-top: 34px; width: 100%; }
+  .ctrl-btn {
+    flex: 1; background: #F5EFE1; color: #20302A; border: none;
+    border-radius: 16px; padding: 16px 0; font-size: 17px; font-weight: 800;
+    cursor: pointer; font-family: inherit;
+  }
+  .ctrl-btn-ghost {
+    flex: 1; background: transparent; color: #F5EFE1;
+    border: 1px solid rgba(255,255,255,0.4); border-radius: 16px;
+    padding: 16px 0; font-size: 17px; font-weight: 700; cursor: pointer;
+    font-family: inherit;
+  }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <div id="setup">
+    <div class="eyebrow">Loopband HIIT</div>
+    <h1>Kies je route</h1>
+    <button class="variant-card" id="cardA" onclick="chooseVariant('A')">
+      <div class="variant-title">Variant A — Heuvel</div>
+      <div class="variant-sub">6 ronden · 90/90 sec · ±24 min</div>
+    </button>
+    <button class="variant-card" id="cardB" onclick="chooseVariant('B')">
+      <div class="variant-title">Variant B — Snelheid</div>
+      <div class="variant-sub">8 ronden · 120/60 sec · ±27 min</div>
+    </button>
+    <button class="start-btn" id="startBtn" onclick="startTraining()">Start ▶</button>
+    <button class="voice-toggle" id="voiceToggle" onclick="toggleVoice()">🔊 Spraak aan</button>
+  </div>
+
+  <div id="run" style="width:100%; display:flex; flex-direction:column; align-items:center;">
+    <div class="eyebrow" id="phaseLabel">Warming-up</div>
+    <div class="ring-wrap" id="ringWrap">
+      <svg width="280" height="280" viewBox="0 0 280 280">
+        <circle cx="140" cy="140" r="122" fill="none" stroke="rgba(255,255,255,0.15)" stroke-width="14"/>
+        <circle id="ringProgress" cx="140" cy="140" r="122" fill="none" stroke="#8FBF9F" stroke-width="14"
+          stroke-linecap="round" transform="rotate(-90 140 140)" style="transition: stroke-dashoffset 1s linear;"/>
+      </svg>
+      <div class="ring-center">
+        <div id="animalEmoji" class="animal-emoji"></div>
+        <div id="animalName" class="animal-name"></div>
+        <div id="phaseIcon" class="phase-icon hidden"></div>
+        <div id="timer" class="timer"></div>
+      </div>
+    </div>
+    <div class="action" id="actionText"></div>
+    <div class="instr" id="instrText"></div>
+    <div class="round-count" id="roundCount"></div>
+    <div class="next" id="nextText"></div>
+    <div class="done-msg hidden" id="doneMsg">Goed gedaan! 🎉</div>
+    <div class="controls" id="controls">
+      <button class="ctrl-btn" id="pauseBtn" onclick="togglePause()">⏸ Pauze</button>
+      <button class="ctrl-btn-ghost" onclick="stopTraining()">⏹ Stop</button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const ANIMALS = [
+  { name: "Aap", emoji: "🐵" },
+  { name: "Olifant", emoji: "🐘" },
+  { name: "Giraffe", emoji: "🦒" },
+  { name: "Leeuw", emoji: "🦁" },
+  { name: "Tijger", emoji: "🐯" },
+  { name: "Vos", emoji: "🦊" },
+  { name: "Konijn", emoji: "🐰" },
+  { name: "Zebra", emoji: "🦓" },
+];
+
+const PHASES = {
+  warmup:   { label: "Warming-up",   bg: "#33473A", ring: "#8FBF9F", say: "Warming-up" },
+  work:     { label: "Werk",         bg: "#C4602A", ring: "#FFD9B0", say: "Werk" },
+  recovery: { label: "Herstel",      bg: "#2B6E64", ring: "#A9E0D2", say: "Herstel" },
+  cooldown: { label: "Cooling-down", bg: "#33473A", ring: "#8FBF9F", say: "Cooling-down" },
+  done:     { label: "Klaar",        bg: "#20302A", ring: "#F5EFE1", say: "Training klaar, goed gedaan" },
+};
+
+function buildRoute(variant) {
+  const segs = [];
+  segs.push({ phase: "warmup", duration: 180, action: "Blijf lopen", instr: "6,0 km/u — heuvel 0" });
+  if (variant === "A") {
+    for (let i = 0; i < 6; i++) {
+      segs.push({ phase: "work", duration: 90, action: "Zet heuvel op 15", instr: "6,0 km/u — heuvel 15", animal: ANIMALS[i] });
+      segs.push({ phase: "recovery", duration: 90, action: "Zet heuvel terug naar 2", instr: "6,0 km/u — heuvel 2", animal: ANIMALS[i] });
+    }
+  } else {
+    for (let i = 0; i < 8; i++) {
+      segs.push({ phase: "work", duration: 120, action: "Zet heuvel op 5, versnel iets", instr: "6,2 km/u — heuvel 5", animal: ANIMALS[i] });
+      segs.push({ phase: "recovery", duration: 60, action: "Zet heuvel terug naar 0", instr: "6,0 km/u — heuvel 0", animal: ANIMALS[i] });
+    }
+  }
+  segs.push({ phase: "cooldown", duration: 180, action: "Rustig uitlopen", instr: "6,0 km/u — heuvel 0" });
+  segs.push({ phase: "done", duration: 0, instr: "" });
+  return segs;
+}
+
+function fmt(s) {
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return m + ":" + String(r).padStart(2, "0");
+}
+
+let route = [];
+let variant = null;
+let idx = 0;
+let left = 0;
+let started = false;
+let paused = false;
+let voiceOn = true;
+let tickHandle = null;
+let audioCtx = null;
+
+const R = 122;
+const C = 2 * Math.PI * R;
+document.getElementById('ringProgress').style.strokeDasharray = C;
+
+function beep(freq, dur) {
+  try {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.frequency.value = freq;
+    osc.type = "sine";
+    gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + dur);
+    osc.connect(gain); gain.connect(audioCtx.destination);
+    osc.start(); osc.stop(audioCtx.currentTime + dur);
+  } catch (e) {}
+}
+
+let dutchVoice = null;
+function loadVoices() {
+  if (!window.speechSynthesis) return;
+  const voices = window.speechSynthesis.getVoices();
+  if (voices && voices.length) {
+    dutchVoice = voices.find(v => v.lang && v.lang.toLowerCase().startsWith('nl')) || null;
+  }
+}
+if (window.speechSynthesis) {
+  loadVoices();
+  window.speechSynthesis.onvoiceschanged = loadVoices;
+}
+
+function speak(text) {
+  if (!voiceOn || !window.speechSynthesis) return;
+  try {
+    window.speechSynthesis.cancel();
+    setTimeout(() => {
+      loadVoices();
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = "nl-NL";
+      u.rate = 1;
+      if (dutchVoice) u.voice = dutchVoice;
+      window.speechSynthesis.speak(u);
+    }, 60);
+  } catch (e) {}
+}
+
+function announce(seg) {
+  const p = PHASES[seg.phase];
+  if (seg.animal && (seg.phase === "work" || seg.phase === "recovery")) {
+    speak(p.say + ", " + seg.animal.name + ". " + seg.action);
+  } else {
+    speak(p.say + ". " + (seg.action || ""));
+  }
+  beep(seg.phase === "work" ? 880 : 520, 0.18);
+}
+
+function chooseVariant(v) {
+  variant = v;
+  route = buildRoute(v);
+  idx = 0;
+  left = route[0].duration;
+  document.getElementById('cardA').classList.toggle('selected', v === 'A');
+  document.getElementById('cardB').classList.toggle('selected', v === 'B');
+  const btn = document.getElementById('startBtn');
+  btn.style.display = 'block';
+  btn.textContent = 'Start ' + (v === 'A' ? 'Variant A' : 'Variant B') + ' ▶';
+}
+
+function toggleVoice() {
+  voiceOn = !voiceOn;
+  document.getElementById('voiceToggle').textContent = voiceOn ? '🔊 Spraak aan' : '🔇 Spraak uit';
+}
+
+function startTraining() {
+  if (!variant) return;
+  started = true; paused = false;
+  if (window.speechSynthesis) {
+    const wake = new SpeechSynthesisUtterance(' ');
+    wake.volume = 0;
+    window.speechSynthesis.speak(wake);
+  }
+  document.getElementById('setup').style.display = 'none';
+  document.getElementById('ringWrap').style.display = 'flex';
+  document.getElementById('controls').style.display = 'flex';
+  announce(route[0]);
+  render();
+  tickHandle = setInterval(tick, 1000);
+}
+
+function togglePause() {
+  paused = !paused;
+  document.getElementById('pauseBtn').textContent = paused ? '▶ Verder' : '⏸ Pauze';
+}
+
+function stopTraining() {
+  clearInterval(tickHandle);
+  if (window.speechSynthesis) window.speechSynthesis.cancel();
+  started = false; paused = false; variant = null; idx = 0; left = 0;
+  document.getElementById('setup').style.display = 'block';
+  document.getElementById('ringWrap').style.display = 'none';
+  document.getElementById('controls').style.display = 'none';
+  document.getElementById('startBtn').style.display = 'none';
+  document.getElementById('cardA').classList.remove('selected');
+  document.getElementById('cardB').classList.remove('selected');
+  document.getElementById('doneMsg').classList.add('hidden');
+  document.body.style.background = PHASES.warmup.bg;
+  document.getElementById('phaseLabel').textContent = 'Warming-up';
+}
+
+function tick() {
+  if (!started || paused) return;
+  if (left > 1) {
+    if (left === 4) beep(440, 0.08);
+    left -= 1;
+  } else {
+    idx += 1;
+    const seg = route[idx];
+    if (seg) {
+      announce(seg);
+      left = seg.duration || 0;
+    } else {
+      clearInterval(tickHandle);
+    }
+  }
+  render();
+}
+
+function render() {
+  const seg = route[idx];
+  if (!seg) return;
+  const phase = PHASES[seg.phase];
+  document.body.style.background = phase.bg;
+  document.getElementById('phaseLabel').textContent = phase.label;
+
+  const emojiEl = document.getElementById('animalEmoji');
+  const nameEl = document.getElementById('animalName');
+  const iconEl = document.getElementById('phaseIcon');
+  if (seg.animal) {
+    emojiEl.textContent = seg.animal.emoji;
+    nameEl.textContent = seg.animal.name;
+    emojiEl.classList.remove('hidden');
+    nameEl.classList.remove('hidden');
+    iconEl.classList.add('hidden');
+  } else {
+    emojiEl.classList.add('hidden');
+    nameEl.classList.add('hidden');
+    iconEl.classList.remove('hidden');
+    iconEl.textContent = seg.phase === 'done' ? '🏁' : '🚶';
+  }
+
+  const timerEl = document.getElementById('timer');
+  if (seg.phase !== 'done') {
+    timerEl.textContent = fmt(left);
+    timerEl.classList.remove('hidden');
+  } else {
+    timerEl.classList.add('hidden');
+  }
+
+  document.getElementById('actionText').textContent = seg.phase !== 'done' ? (seg.action || '') : '';
+  document.getElementById('instrText').textContent = seg.instr || '';
+
+  const totalRounds = route.filter(s => s.phase === 'work').length;
+  const roundNum = seg.animal ? route.slice(0, idx + 1).filter(s => s.phase === 'work').length : null;
+  document.getElementById('roundCount').textContent = roundNum ? ('Ronde ' + roundNum + ' van ' + totalRounds) : '';
+
+  const next = route[idx + 1];
+  const nextEl = document.getElementById('nextText');
+  if (next && seg.phase !== 'done') {
+    nextEl.textContent = 'zo: ' + (next.animal ? (next.animal.emoji + ' ' + PHASES[next.phase].label) : PHASES[next.phase].label);
+  } else {
+    nextEl.textContent = '';
+  }
+
+  document.getElementById('doneMsg').classList.toggle('hidden', seg.phase !== 'done');
+  document.getElementById('controls').style.display = seg.phase !== 'done' ? 'flex' : 'flex';
+  document.getElementById('pauseBtn').style.display = seg.phase !== 'done' ? 'block' : 'none';
+
+  const ring = document.getElementById('ringProgress');
+  ring.style.stroke = phase.ring;
+  if (seg.duration > 0) {
+    const pct = left / seg.duration;
+    ring.style.display = 'block';
+    ring.style.strokeDashoffset = C * (1 - pct);
+  } else {
+    ring.style.display = 'none';
+  }
+}
+</script>
+</body>
+</html>
