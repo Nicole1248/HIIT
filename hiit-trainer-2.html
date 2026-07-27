@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Loopband HIIT</title>
+<style>
+  html, body { margin: 0; padding: 0; }
+  #root { min-height: 100vh; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+
+<script type="text/babel" data-presets="react">
+
+const { useState, useEffect, useRef, useCallback } = React;
+
+// ---- Route data -----------------------------------------------------
+const ANIMALS = [
+  { name: "Aap", emoji: "🐵" },
+  { name: "Olifant", emoji: "🐘" },
+  { name: "Giraffe", emoji: "🦒" },
+  { name: "Leeuw", emoji: "🦁" },
+  { name: "Tijger", emoji: "🐯" },
+  { name: "Neushoorn", emoji: "🦏" },
+  { name: "Konijn", emoji: "🐰" },
+  { name: "Zebra", emoji: "🦓" },
+];
+
+const PHASES = {
+  warmup: { label: "Warming-up", bg: "#33473A", ring: "#8FBF9F", say: "Warming-up" },
+  work: { label: "Werk", bg: "#C4602A", ring: "#FFD9B0", say: "Werk" },
+  recovery: { label: "Herstel", bg: "#2B6E64", ring: "#A9E0D2", say: "Herstel" },
+  cooldown: { label: "Cooling-down", bg: "#33473A", ring: "#8FBF9F", say: "Cooling-down" },
+  done: { label: "Klaar", bg: "#20302A", ring: "#F5EFE1", say: "Training klaar, goed gedaan" },
+};
+
+const WARMUP_INSTR = "6,0 km/u — heuvel 0";
+const COOLDOWN_INSTR = "6,0 km/u — heuvel 0";
+const WARMUP_S = 180;
+const COOLDOWN_S = 180;
+
+const VARIANT_CONFIGS = [
+  {
+    key: "noors",
+    title: "Noorse 4x4",
+    rounds: 4,
+    work: 240,
+    recovery: 180,
+    workInstr: "6,0 km/u — heuvel 15",
+    recInstr: "4,8 km/u — heuvel 0",
+  },
+  {
+    key: "A",
+    title: "Variant A — Heuvel",
+    rounds: 6,
+    work: 90,
+    recovery: 120,
+    workInstr: "6,0 km/u — heuvel 15",
+    recInstr: "4,8 km/u — heuvel 0",
+  },
+  {
+    key: "B",
+    title: "Variant B — Snelheid",
+    rounds: 8,
+    work: 120,
+    recovery: 60,
+    workInstr: "6,2 km/u — heuvel 5",
+    recInstr: "6,0 km/u — heuvel 0",
+  },
+];
+
+function fmtDur(seconds) {
+  if (seconds % 60 === 0) return `${seconds / 60} min`;
+  return `${seconds} sec`;
+}
+
+function totalMinutes(config) {
+  const total = WARMUP_S + config.rounds * (config.work + config.recovery) + COOLDOWN_S;
+  return Math.round(total / 60);
+}
+
+function variantSubtitle(config) {
+  return `${config.rounds} ronden · ${fmtDur(config.work)} werk / ${fmtDur(config.recovery)} herstel · ±${totalMinutes(config)} min`;
+}
+
+function buildRoute(config) {
+  const segs = [];
+  segs.push({ phase: "warmup", duration: WARMUP_S, instr: WARMUP_INSTR });
+  for (let i = 0; i < config.rounds; i++) {
+    segs.push({ phase: "work", duration: config.work, instr: config.workInstr, animal: ANIMALS[i] });
+    segs.push({ phase: "recovery", duration: config.recovery, instr: config.recInstr, animal: ANIMALS[i] });
+  }
+  segs.push({ phase: "cooldown", duration: COOLDOWN_S, instr: COOLDOWN_INSTR });
+  segs.push({ phase: "done", duration: 0, instr: "" });
+  return segs;
+}
+
+function fmt(s) {
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return `${m}:${r.toString().padStart(2, "0")}`;
+}
+
+function HiitTrainer() {
+  const [variantKey, setVariantKey] = useState(null);
+  const [started, setStarted] = useState(false);
+  const [paused, setPaused] = useState(false);
+  const [idx, setIdx] = useState(0);
+  const [left, setLeft] = useState(0);
+  const [voiceOn, setVoiceOn] = useState(true);
+  const routeRef = useRef([]);
+  const audioCtxRef = useRef(null);
+
+  useEffect(() => {
+    const svg =
+      "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'>" +
+      "<text x='50' y='78' font-size='80' text-anchor='middle'>🐯</text></svg>";
+    const url = `data:image/svg+xml,${encodeURIComponent(svg)}`;
+    let link = document.querySelector("link[rel~='icon']");
+    if (!link) {
+      link = document.createElement("link");
+      link.rel = "icon";
+      document.head.appendChild(link);
+    }
+    link.href = url;
+  }, []);
+
+  const beep = useCallback((freq = 660, dur = 0.15, gain = 0.15) => {
+    try {
+      if (!audioCtxRef.current) {
+        audioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      const ctx = audioCtxRef.current;
+      const osc = ctx.createOscillator();
+      const g = ctx.createGain();
+      osc.frequency.value = freq;
+      osc.type = "sine";
+      g.gain.setValueAtTime(gain, ctx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+      osc.connect(g);
+      g.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + dur);
+    } catch (e) {}
+  }, []);
+
+  const speak = useCallback(
+    (text) => {
+      if (!voiceOn || !window.speechSynthesis) return;
+      try {
+        window.speechSynthesis.cancel();
+        const u = new SpeechSynthesisUtterance(text);
+        u.lang = "nl-NL";
+        u.rate = 1;
+        window.speechSynthesis.speak(u);
+      } catch (e) {}
+    },
+    [voiceOn]
+  );
+
+  const announce = useCallback(
+    (seg) => {
+      const p = PHASES[seg.phase];
+      if (seg.animal && (seg.phase === "work" || seg.phase === "recovery")) {
+        speak(`${p.say}, ${seg.animal.name}`);
+      } else {
+        speak(p.say);
+      }
+      beep(seg.phase === "work" ? 880 : 520, 0.18, 0.15);
+    },
+    [speak, beep]
+  );
+
+  const chooseVariant = (key) => {
+    const config = VARIANT_CONFIGS.find((c) => c.key === key);
+    routeRef.current = buildRoute(config);
+    setVariantKey(key);
+    setIdx(0);
+    setLeft(routeRef.current[0].duration);
+  };
+
+  const start = () => {
+    setStarted(true);
+    setPaused(false);
+    announce(routeRef.current[0]);
+  };
+
+  const togglePause = () => setPaused((p) => !p);
+
+  const stop = () => {
+    setStarted(false);
+    setPaused(false);
+    setVariantKey(null);
+    if (window.speechSynthesis) window.speechSynthesis.cancel();
+  };
+
+  useEffect(() => {
+    if (!started || paused) return;
+    const t = setInterval(() => {
+      setLeft((prev) => {
+        if (prev > 1) {
+          if (prev === 10) beep(750, 0.3, 0.9);
+          return prev - 1;
+        }
+        setIdx((i) => {
+          const next = i + 1;
+          const seg = routeRef.current[next];
+          if (seg) {
+            announce(seg);
+            setLeft(seg.duration || 0);
+          }
+          return next;
+        });
+        return 0;
+      });
+    }, 1000);
+    return () => clearInterval(t);
+  }, [started, paused, announce, beep]);
+
+  if (!started) {
+    return (
+      <div style={styles.page(PHASES.warmup.bg)}>
+        <div style={styles.centerCol}>
+          <div style={styles.eyebrow}>Loopband HIIT</div>
+          <h1 style={styles.h1}>Kies je route</h1>
+
+          {VARIANT_CONFIGS.map((config) => (
+            <button key={config.key} style={styles.variantCard} onClick={() => chooseVariant(config.key)}>
+              <div style={styles.variantTitle}>{config.title}</div>
+              <div style={styles.variantSub}>{variantSubtitle(config)}</div>
+            </button>
+          ))}
+
+          {variantKey && (
+            <button style={styles.startBtn} onClick={start}>
+              Start {VARIANT_CONFIGS.find((c) => c.key === variantKey).title} ▶
+            </button>
+          )}
+
+          <button style={styles.voiceToggle} onClick={() => setVoiceOn((v) => !v)}>
+            {voiceOn ? "🔊 Spraak aan" : "🔇 Spraak uit"}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const seg = routeRef.current[idx];
+  const next = routeRef.current[idx + 1];
+  const phase = PHASES[seg.phase];
+  const pct = seg.duration ? left / seg.duration : 0;
+  const totalRounds = routeRef.current.filter((s) => s.phase === "work").length;
+  const roundNum = seg.animal ? routeRef.current.slice(0, idx + 1).filter((s) => s.phase === "work").length : null;
+
+  const R = 130;
+  const C = 2 * Math.PI * R;
+
+  return (
+    <div style={styles.page(phase.bg)}>
+      <div style={styles.centerCol}>
+        <div style={styles.eyebrow}>{phase.label}</div>
+
+        {seg.instr && <div style={styles.instrTop}>{seg.instr}</div>}
+        {next && seg.phase !== "done" && (
+          <div style={styles.nextTop}>
+            zo: {next.animal ? `${next.animal.emoji} ${PHASES[next.phase].label}` : PHASES[next.phase].label}
+          </div>
+        )}
+
+        <div style={styles.ringWrap}>
+          <svg width="300" height="300" viewBox="0 0 300 300">
+            <circle cx="150" cy="150" r={R} fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="14" />
+            {seg.duration > 0 && (
+              <circle
+                cx="150"
+                cy="150"
+                r={R}
+                fill="none"
+                stroke={phase.ring}
+                strokeWidth="14"
+                strokeLinecap="round"
+                strokeDasharray={C}
+                strokeDashoffset={C * (1 - pct)}
+                transform="rotate(-90 150 150)"
+                style={{ transition: "stroke-dashoffset 1s linear" }}
+              />
+            )}
+          </svg>
+          <div style={styles.ringCenter}>
+            {seg.animal ? (
+              <>
+                <div style={styles.animalEmoji}>{seg.animal.emoji}</div>
+                <div style={styles.animalName}>{seg.animal.name}</div>
+              </>
+            ) : (
+              <div style={styles.phaseIcon}>{seg.phase === "done" ? "🏁" : "🚶"}</div>
+            )}
+            {seg.phase !== "done" && <div style={styles.timer}>{fmt(left)}</div>}
+          </div>
+        </div>
+
+        {roundNum && (
+          <div style={styles.roundCount}>
+            Ronde {roundNum} van {totalRounds}
+          </div>
+        )}
+        {seg.phase === "done" && <div style={styles.doneMsg}>Goed gedaan! 🎉</div>}
+
+        <div style={styles.controls}>
+          {seg.phase !== "done" && (
+            <button style={styles.ctrlBtn} onClick={togglePause}>
+              {paused ? "▶ Verder" : "⏸ Pauze"}
+            </button>
+          )}
+          <button style={styles.ctrlBtnGhost} onClick={stop}>
+            ⏹ Stop
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const styles = {
+  page: (bg) => ({
+    minHeight: "100vh",
+    width: "100%",
+    background: bg,
+    transition: "background 0.8s ease",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontFamily: "'Nunito', 'Segoe UI', system-ui, sans-serif",
+    color: "#F5EFE1",
+    padding: "24px",
+    boxSizing: "border-box",
+  }),
+  centerCol: { display: "flex", flexDirection: "column", alignItems: "center", width: "100%", maxWidth: 420 },
+  eyebrow: { fontSize: 15, letterSpacing: "0.18em", textTransform: "uppercase", opacity: 0.75, marginBottom: 8, fontWeight: 700 },
+  h1: { fontSize: 30, fontWeight: 800, margin: "0 0 24px 0" },
+  variantCard: {
+    width: "100%",
+    background: "rgba(255,255,255,0.1)",
+    border: "1px solid rgba(255,255,255,0.25)",
+    borderRadius: 18,
+    padding: "18px 20px",
+    marginBottom: 14,
+    textAlign: "left",
+    color: "#F5EFE1",
+    cursor: "pointer",
+  },
+  variantTitle: { fontSize: 19, fontWeight: 800, marginBottom: 4 },
+  variantSub: { fontSize: 14, opacity: 0.8 },
+  startBtn: {
+    marginTop: 10,
+    width: "100%",
+    background: "#F5EFE1",
+    color: "#20302A",
+    border: "none",
+    borderRadius: 18,
+    padding: "18px 20px",
+    fontSize: 19,
+    fontWeight: 800,
+    cursor: "pointer",
+  },
+  voiceToggle: { marginTop: 20, background: "transparent", border: "none", color: "#F5EFE1", opacity: 0.75, fontSize: 14, cursor: "pointer" },
+  instrTop: { fontSize: 26, fontWeight: 800, textAlign: "center", marginBottom: 4 },
+  nextTop: { fontSize: 15, opacity: 0.7, marginBottom: 18, textAlign: "center" },
+  ringWrap: { position: "relative", width: 300, height: 300, display: "flex", alignItems: "center", justifyContent: "center" },
+  ringCenter: { position: "absolute", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" },
+  animalEmoji: { fontSize: 72, lineHeight: 1 },
+  animalName: { fontSize: 20, fontWeight: 800, letterSpacing: "0.04em", marginTop: 2 },
+  phaseIcon: { fontSize: 64 },
+  timer: { fontSize: 34, fontWeight: 700, marginTop: 8, fontVariantNumeric: "tabular-nums" },
+  roundCount: { fontSize: 14, opacity: 0.7, marginTop: 6 },
+  doneMsg: { fontSize: 22, fontWeight: 800, marginTop: 18 },
+  controls: { display: "flex", gap: 14, marginTop: 34, width: "100%" },
+  ctrlBtn: { flex: 1, background: "#F5EFE1", color: "#20302A", border: "none", borderRadius: 16, padding: "16px 0", fontSize: 17, fontWeight: 800, cursor: "pointer" },
+  ctrlBtnGhost: { flex: 1, background: "transparent", color: "#F5EFE1", border: "1px solid rgba(255,255,255,0.4)", borderRadius: 16, padding: "16px 0", fontSize: 17, fontWeight: 700, cursor: "pointer" },
+};
+
+ReactDOM.createRoot(document.getElementById("root")).render(<HiitTrainer />);
+
+</script>
+</body>
+</html>
