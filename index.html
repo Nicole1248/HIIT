@@ -12,27 +12,10 @@
 </head>
 <body>
 <div id="root"></div>
-<div id="debug" style="color:#fff;background:#000;padding:16px;font-family:monospace;font-size:13px;white-space:pre-wrap;"></div>
 
-<script>
-  function logErr(msg) {
-    var d = document.getElementById('debug');
-    d.textContent += msg + "\n";
-  }
-  window.onerror = function(msg, src, line, col) {
-    logErr('JS ERROR: ' + msg + ' (regel ' + line + ')');
-  };
-  setTimeout(function() {
-    var root = document.getElementById('root');
-    if (!root.innerHTML) {
-      logErr('Na 4 seconden is er nog niets getekend. Zie eventuele meldingen hierboven. Als hier niets staat: de scripts zijn geblokkeerd zonder foutmelding (bv. door een advertentie-/tracker-blokkering of netwerkfilter).');
-    }
-  }, 4000);
-</script>
-
-<script crossorigin src="https://cdn.jsdelivr.net/npm/react@18/umd/react.production.min.js" onerror="logErr('KON NIET LADEN: React (react@18)')"></script>
-<script crossorigin src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.production.min.js" onerror="logErr('KON NIET LADEN: ReactDOM')"></script>
-<script crossorigin src="https://cdn.jsdelivr.net/npm/@babel/standalone/babel.min.js" onerror="logErr('KON NIET LADEN: Babel')"></script>
+<script crossorigin src="https://cdn.jsdelivr.net/npm/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.production.min.js"></script>
+<script crossorigin src="https://cdn.jsdelivr.net/npm/@babel/standalone@7/babel.min.js"></script>
 
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useRef, useCallback } = React;
