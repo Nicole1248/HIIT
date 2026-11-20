@@ -1,0 +1,713 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Loopband HIIT</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%20100%20100'%3E%3Ctext%20x%3D'50'%20y%3D'78'%20font-size%3D'80'%20text-anchor%3D'middle'%3E%F0%9F%A6%81%3C%2Ftext%3E%3C%2Fsvg%3E" />
+<style>
+  html, body { margin: 0; padding: 0; background: #33473A; }
+  * { box-sizing: border-box; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useRef, useCallback } = React;
+
+// ---- Route data -----------------------------------------------------
+const ANIMALS = [
+  { name: "Aap", emoji: "🐵" },
+  { name: "Olifant", emoji: "🐘" },
+  { name: "Giraffe", emoji: "🦒" },
+  { name: "Leeuw", emoji: "🦁" },
+  { name: "Tijger", emoji: "🐯" },
+  { name: "Neushoorn", emoji: "🦏" },
+  { name: "Konijn", emoji: "🐰" },
+  { name: "Zebra", emoji: "🦓" },
+];
+
+const PHASES = {
+  warmup: { label: "Warming-up", bg: "#33473A", ring: "#8FBF9F", say: "Warming-up" },
+  work: { label: "Werk", bg: "#C4602A", ring: "#FFD9B0", say: "Werk" },
+  recovery: { label: "Herstel", bg: "#2B6E64", ring: "#A9E0D2", say: "Herstel" },
+  cooldown: { label: "Cooling-down", bg: "#33473A", ring: "#8FBF9F", say: "Cooling-down" },
+  done: { label: "Klaar", bg: "#20302A", ring: "#F5EFE1", say: "Training klaar, goed gedaan" },
+};
+
+// Warming-up / cooling-down: 1 minuut, 5,5 km/u, heuvel 0
+const WARMUP_SPEED = "5,5 km/u";
+const WARMUP_INCLINE = 0;
+const COOLDOWN_SPEED = "5,5 km/u";
+const COOLDOWN_INCLINE = 0;
+const WARMUP_S = 60;
+const COOLDOWN_S = 60;
+const WARNING_S = 12; // seconden vooraf waarschuwen voor het einde van een onderdeel
+const SEEK_S = 30; // stapgrootte voor vooruit-/terugspoelen
+
+function instrText(speed, incline) {
+  return `${speed} — heuvel ${incline}`;
+}
+
+const VARIANT_CONFIGS = [
+  {
+    key: "noors",
+    title: "Noorse 4x4",
+    rounds: 4,
+    work: 240,
+    recovery: 180,
+    workSpeed: "5,5 km/u",
+    workIncline: 15,
+    recSpeed: "5,0 km/u",
+    recIncline: 0,
+  },
+  {
+    key: "A",
+    title: "Variant A — Heuvel",
+    rounds: 6,
+    work: 90,
+    recovery: 120,
+    workSpeed: "6,0 km/u",
+    workIncline: 15,
+    recSpeed: "4,8 km/u",
+    recIncline: 0,
+  },
+  {
+    key: "B",
+    title: "Variant B — Snelheid",
+    rounds: 8,
+    work: 120,
+    recovery: 60,
+    workSpeed: "6,2 km/u",
+    workIncline: 5,
+    recSpeed: "6,0 km/u",
+    recIncline: 0,
+  },
+  {
+    key: "piek",
+    title: "De 15% Piek",
+    subtitle: "9 blokken · helling 2–15% · 30 min · handmatig bijstellen",
+    segments: [
+      { phase: "warmup", duration: 240, speed: "6,0–6,3 km/u", incline: "2 → 5", rpe: "4", say: "Warming-up, heuvel 2 naar 5, zes kilometer per uur" },
+      { phase: "work", duration: 240, speed: "6,0 km/u", incline: 9, rpe: "6", say: "Eerste klim, heuvel 9, zes kilometer per uur" },
+      { phase: "work", duration: 240, speed: "5,5–5,8 km/u", incline: 12, rpe: "7", say: "Steile wand, heuvel 12, vijf en een half kilometer per uur" },
+      { phase: "recovery", duration: 180, speed: "6,2 km/u", incline: 6, rpe: "5–6", say: "Actief herstel, heuvel 6, zes kilometer per uur" },
+      { phase: "work", duration: 240, speed: "5,0–5,4 km/u", incline: 15, rpe: "8", say: "Maximale beklimming, heuvel 15, vijf kilometer per uur" },
+      { phase: "recovery", duration: 180, speed: "6,0 km/u", incline: 7, rpe: "6", say: "Tussenstuk, heuvel 7, zes kilometer per uur" },
+      { phase: "work", duration: 240, speed: "5,2–5,5 km/u", incline: 15, rpe: "8–9", say: "Tweede top, heuvel 15, vijf kilometer per uur" },
+      { phase: "work", duration: 120, speed: "6,2 km/u", incline: 8, rpe: "7", say: "Eindsprint omhoog, heuvel 8, zes kilometer per uur" },
+      { phase: "cooldown", duration: 120, speed: "5,0 km/u", incline: 1, rpe: "3", say: "Cooling-down, heuvel 1, vijf kilometer per uur" },
+    ],
+  },
+];
+
+function fmtDur(seconds) {
+  if (seconds % 60 === 0) return `${seconds / 60} min`;
+  return `${seconds} sec`;
+}
+
+function totalMinutes(config) {
+  if (config.segments) return Math.round(config.segments.reduce((s, x) => s + x.duration, 0) / 60);
+  const total = WARMUP_S + config.rounds * (config.work + config.recovery) + COOLDOWN_S;
+  return Math.round(total / 60);
+}
+
+function variantSubtitle(config) {
+  if (config.subtitle) return config.subtitle;
+  return `${config.rounds} ronden · ${fmtDur(config.work)} werk / ${fmtDur(config.recovery)} herstel · ±${totalMinutes(
+    config
+  )} min`;
+}
+
+function buildRoute(config) {
+  const segs = [];
+  if (config.segments) {
+    config.segments.forEach((x) => segs.push({ ...x, instr: instrText(x.speed, x.incline) }));
+    segs.push({ phase: "done", duration: 0, instr: "" });
+    return segs;
+  }
+  segs.push({
+    phase: "warmup",
+    duration: WARMUP_S,
+    speed: WARMUP_SPEED,
+    incline: WARMUP_INCLINE,
+    instr: instrText(WARMUP_SPEED, WARMUP_INCLINE),
+  });
+  for (let i = 0; i < config.rounds; i++) {
+    segs.push({
+      phase: "work",
+      duration: config.work,
+      speed: config.workSpeed,
+      incline: config.workIncline,
+      instr: instrText(config.workSpeed, config.workIncline),
+      animal: ANIMALS[i],
+      roundPart: 1,
+    });
+    segs.push({
+      phase: "recovery",
+      duration: config.recovery,
+      speed: config.recSpeed,
+      incline: config.recIncline,
+      instr: instrText(config.recSpeed, config.recIncline),
+      animal: ANIMALS[i],
+      roundPart: 2,
+    });
+  }
+  segs.push({
+    phase: "cooldown",
+    duration: COOLDOWN_S,
+    speed: COOLDOWN_SPEED,
+    incline: COOLDOWN_INCLINE,
+    instr: instrText(COOLDOWN_SPEED, COOLDOWN_INCLINE),
+  });
+  segs.push({ phase: "done", duration: 0, instr: "" });
+  return segs;
+}
+
+// Vindt bij een gegeven "elapsed" (seconden sinds trainingsstart) welk
+// onderdeel actief is en hoeveel tijd daar nog in over is. Dit is de
+// basis voor zowel het gewone aftellen als voor skip/terug-/vooruitspoelen.
+function locate(elapsed, route) {
+  let acc = 0;
+  for (let i = 0; i < route.length; i++) {
+    const d = route[i].duration;
+    if (d === 0) {
+      return { idx: i, timeLeft: 0 };
+    }
+    if (elapsed < acc + d) {
+      return { idx: i, timeLeft: d - (elapsed - acc) };
+    }
+    acc += d;
+  }
+  return { idx: route.length - 1, timeLeft: 0 };
+}
+
+function cumulativeStart(route, idx) {
+  let acc = 0;
+  for (let i = 0; i < idx; i++) acc += route[i].duration;
+  return acc;
+}
+
+function segColor(phase) {
+  switch (phase) {
+    case "work":
+      return "#C4602A";
+    case "recovery":
+      return "#CFE9DF";
+    default:
+      return "#5C6F63";
+  }
+}
+
+function fmt(s) {
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return `${m}:${r.toString().padStart(2, "0")}`;
+}
+
+// Bouwt de "zo: ..." tekst voor het volgende onderdeel, inclusief duur,
+// heuvel en snelheid.
+function nextText(next) {
+  const p = PHASES[next.phase];
+  const namePart = next.animal ? `${next.animal.emoji} ${p.label.toLowerCase()}` : p.label;
+  if (next.duration === 0) return `zo: ${p.label.toLowerCase()}`;
+  return `zo: ${namePart}, ${fmtDur(next.duration)} - heuvel ${next.incline} - ${next.speed}`;
+}
+
+function HiitTrainer() {
+  const [variantKey, setVariantKey] = useState(null);
+  const [started, setStarted] = useState(false);
+  const [paused, setPaused] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
+  const [voiceOn, setVoiceOn] = useState(true);
+  const routeRef = useRef([]);
+  const totalRef = useRef(0);
+  const idxRef = useRef(0);
+  const audioCtxRef = useRef(null);
+
+  useEffect(() => {
+    const svg =
+      "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'>" +
+      "<text x='50' y='78' font-size='80' text-anchor='middle'>🦁</text></svg>";
+    const url = `data:image/svg+xml,${encodeURIComponent(svg)}`;
+    let link = document.querySelector("link[rel~='icon']");
+    if (!link) {
+      link = document.createElement("link");
+      link.rel = "icon";
+      document.head.appendChild(link);
+    }
+    link.href = url;
+  }, []);
+
+  const beep = useCallback((freq = 660, dur = 0.15, gain = 0.15) => {
+    try {
+      if (!audioCtxRef.current) {
+        audioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      const ctx = audioCtxRef.current;
+      const osc = ctx.createOscillator();
+      const g = ctx.createGain();
+      osc.frequency.value = freq;
+      osc.type = "sine";
+      g.gain.setValueAtTime(gain, ctx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+      osc.connect(g);
+      g.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + dur);
+    } catch (e) {
+      /* audio niet beschikbaar, negeren */
+    }
+  }, []);
+
+  const speak = useCallback(
+    (text) => {
+      if (!voiceOn || !window.speechSynthesis) return;
+      try {
+        window.speechSynthesis.cancel();
+        const u = new SpeechSynthesisUtterance(text);
+        u.lang = "nl-NL";
+        u.rate = 1;
+        window.speechSynthesis.speak(u);
+      } catch (e) {
+        /* spraak niet beschikbaar, negeren */
+      }
+    },
+    [voiceOn]
+  );
+
+  const announce = useCallback(
+    (seg) => {
+      const p = PHASES[seg.phase];
+      if (seg.say) {
+        speak(seg.say);
+      } else if (seg.animal && (seg.phase === "work" || seg.phase === "recovery")) {
+        speak(`${p.say}, ${seg.animal.name}`);
+      } else {
+        speak(p.say);
+      }
+      beep(seg.phase === "work" ? 880 : 520, 0.18, 0.15);
+    },
+    [speak, beep]
+  );
+
+  const chooseVariant = (key) => {
+    const config = VARIANT_CONFIGS.find((c) => c.key === key);
+    const route = buildRoute(config);
+    routeRef.current = route;
+    totalRef.current = route.reduce((s, seg) => s + seg.duration, 0);
+    setVariantKey(key);
+    setElapsed(0);
+    idxRef.current = 0;
+  };
+
+  const start = () => {
+    setStarted(true);
+    setPaused(false);
+    setElapsed(0);
+    idxRef.current = 0;
+    announce(routeRef.current[0]);
+  };
+
+  const togglePause = () => setPaused((p) => !p);
+
+  const stop = () => {
+    setStarted(false);
+    setPaused(false);
+    setVariantKey(null);
+    if (window.speechSynthesis) window.speechSynthesis.cancel();
+  };
+
+  const skipNext = () => {
+    const route = routeRef.current;
+    const { idx } = locate(elapsed, route);
+    if (idx + 1 < route.length) {
+      setElapsed(cumulativeStart(route, idx + 1));
+    }
+  };
+
+  const seek = (delta) => {
+    setElapsed((prev) => {
+      let ne = prev + delta;
+      if (ne < 0) ne = 0;
+      if (ne > totalRef.current) ne = totalRef.current;
+      return ne;
+    });
+  };
+
+  useEffect(() => {
+    if (!started || paused) return;
+    const t = setInterval(() => {
+      setElapsed((prev) => Math.min(prev + 1, totalRef.current));
+    }, 1000);
+    return () => clearInterval(t);
+  }, [started, paused]);
+
+  useEffect(() => {
+    if (!started) return;
+    const route = routeRef.current;
+    const { idx, timeLeft } = locate(elapsed, route);
+    if (idx !== idxRef.current) {
+      idxRef.current = idx;
+      announce(route[idx]);
+    }
+    if (route[idx].duration > 0 && timeLeft === WARNING_S) {
+      beep(750, 0.3, 0.9);
+    }
+  }, [elapsed, started, announce, beep]);
+
+  if (!started) {
+    return (
+      <div style={styles.page(PHASES.warmup.bg)}>
+        <div style={styles.centerCol}>
+          <div style={styles.eyebrow}>Loopband HIIT</div>
+          <h1 style={styles.h1}>Kies je route</h1>
+
+          {VARIANT_CONFIGS.map((config) => (
+            <button key={config.key} style={styles.variantCard} onClick={() => chooseVariant(config.key)}>
+              <div style={styles.variantTitle}>{config.title}</div>
+              <div style={styles.variantSub}>{variantSubtitle(config)}</div>
+            </button>
+          ))}
+
+          {variantKey && (
+            <button style={styles.startBtn} onClick={start}>
+              Start {VARIANT_CONFIGS.find((c) => c.key === variantKey).title} ▶
+            </button>
+          )}
+
+          <button style={styles.voiceToggle} onClick={() => setVoiceOn((v) => !v)}>
+            {voiceOn ? "🔊 Spraak aan" : "🔇 Spraak uit"}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const route = routeRef.current;
+  const { idx, timeLeft } = locate(elapsed, route);
+  const seg = route[idx];
+  const next = route[idx + 1];
+  const phase = PHASES[seg.phase];
+  const pct = seg.duration ? timeLeft / seg.duration : 0;
+  const totalRounds = route.filter((s) => s.phase === "work").length;
+  const roundNum = seg.animal ? route.slice(0, idx + 1).filter((s) => s.phase === "work").length : null;
+  const canSkip = idx + 1 < route.length;
+
+  const R = 130;
+  const C = 2 * Math.PI * R;
+
+  return (
+    <div style={styles.page(phase.bg)}>
+      <div style={styles.centerCol}>
+        <div style={styles.eyebrow}>{phase.label}</div>
+
+        {seg.instr && <div style={styles.instrTop}>{seg.instr}</div>}
+        {seg.rpe && <div style={styles.rpeLine}>RPE {seg.rpe} (schatting)</div>}
+        {next && seg.phase !== "done" && <div style={styles.nextTop}>{nextText(next)}</div>}
+
+        <div style={styles.ringWrap}>
+          <svg width="300" height="300" viewBox="0 0 300 300">
+            <circle cx="150" cy="150" r={R} fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="14" />
+            {seg.duration > 0 && (
+              <circle
+                cx="150"
+                cy="150"
+                r={R}
+                fill="none"
+                stroke={phase.ring}
+                strokeWidth="14"
+                strokeLinecap="round"
+                strokeDasharray={C}
+                strokeDashoffset={C * (1 - pct)}
+                transform="rotate(-90 150 150)"
+                style={{ transition: "stroke-dashoffset 1s linear" }}
+              />
+            )}
+          </svg>
+          <div style={styles.ringCenter}>
+            {seg.animal ? (
+              <>
+                <div style={styles.animalEmoji}>{seg.animal.emoji}</div>
+                <div style={styles.animalName}>{seg.animal.name}</div>
+              </>
+            ) : (
+              <div style={styles.phaseIcon}>{seg.phase === "done" ? "🏁" : "🚶"}</div>
+            )}
+            {seg.phase !== "done" && <div style={styles.timer}>{fmt(timeLeft)}</div>}
+          </div>
+        </div>
+
+        {roundNum && (
+          <div style={styles.roundCount}>
+            Ronde {roundNum} van {totalRounds}
+          </div>
+        )}
+        {seg.phase === "done" && <div style={styles.doneMsg}>Goed gedaan! 🎉</div>}
+
+        {/* Voortgangsbalk: hele training in één oogopslag, donker = werk, licht = herstel */}
+        <div style={styles.progressBar}>
+          {route.map((s, i) =>
+            s.duration > 0 ? (
+              <div
+                key={i}
+                style={{
+                  flexGrow: s.duration,
+                  background: segColor(s.phase),
+                  opacity: i === idx ? 1 : 0.5,
+                  height: "100%",
+                }}
+              />
+            ) : null
+          )}
+          <div
+            style={{
+              ...styles.progressPointer,
+              left: `${totalRef.current ? (elapsed / totalRef.current) * 100 : 0}%`,
+            }}
+          />
+        </div>
+
+        {/* Labelrij onder de balk: dier + rondedeel (bv. Aap 1/2, Aap 2/2) */}
+        <div style={styles.labelBar}>
+          {route.map((s, i) =>
+            s.duration > 0 ? (
+              <div
+                key={i}
+                style={{
+                  flexGrow: s.duration,
+                  opacity: i === idx ? 1 : 0.45,
+                  ...styles.labelCell,
+                }}
+              >
+                {s.animal ? (
+                  <span style={styles.labelText}>
+                    {s.animal.emoji} {s.animal.name} {s.roundPart}/2
+                  </span>
+                ) : null}
+              </div>
+            ) : null
+          )}
+        </div>
+
+        {seg.phase !== "done" && (
+          <div style={styles.seekRow}>
+            <button style={styles.seekBtn} onClick={() => seek(-SEEK_S)}>
+              ⏪ 30s
+            </button>
+            <button style={styles.seekBtn} onClick={() => seek(SEEK_S)}>
+              30s ⏩
+            </button>
+            {canSkip && (
+              <button style={styles.seekBtn} onClick={skipNext}>
+                Volgende ⏭
+              </button>
+            )}
+          </div>
+        )}
+
+        <div style={styles.controls}>
+          {seg.phase !== "done" && (
+            <button style={styles.ctrlBtn} onClick={togglePause}>
+              {paused ? "▶ Verder" : "⏸ Pauze"}
+            </button>
+          )}
+          <button style={styles.ctrlBtnGhost} onClick={stop}>
+            ⏹ Stop
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const styles = {
+  page: (bg) => ({
+    minHeight: "100vh",
+    width: "100%",
+    background: bg,
+    transition: "background 0.8s ease",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontFamily: "'Nunito', 'Segoe UI', system-ui, sans-serif",
+    color: "#F5EFE1",
+    padding: "24px",
+    boxSizing: "border-box",
+  }),
+  centerCol: {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    width: "100%",
+    maxWidth: 420,
+  },
+  eyebrow: {
+    fontSize: 15,
+    letterSpacing: "0.18em",
+    textTransform: "uppercase",
+    opacity: 0.75,
+    marginBottom: 8,
+    fontWeight: 700,
+  },
+  h1: {
+    fontSize: 30,
+    fontWeight: 800,
+    margin: "0 0 24px 0",
+  },
+  variantCard: {
+    width: "100%",
+    background: "rgba(255,255,255,0.1)",
+    border: "1px solid rgba(255,255,255,0.25)",
+    borderRadius: 18,
+    padding: "18px 20px",
+    marginBottom: 14,
+    textAlign: "left",
+    color: "#F5EFE1",
+    cursor: "pointer",
+  },
+  variantTitle: { fontSize: 19, fontWeight: 800, marginBottom: 4 },
+  variantSub: { fontSize: 14, opacity: 0.8 },
+  startBtn: {
+    marginTop: 10,
+    width: "100%",
+    background: "#F5EFE1",
+    color: "#20302A",
+    border: "none",
+    borderRadius: 18,
+    padding: "18px 20px",
+    fontSize: 19,
+    fontWeight: 800,
+    cursor: "pointer",
+  },
+  voiceToggle: {
+    marginTop: 20,
+    background: "transparent",
+    border: "none",
+    color: "#F5EFE1",
+    opacity: 0.75,
+    fontSize: 14,
+    cursor: "pointer",
+  },
+  instrTop: {
+    fontSize: 26,
+    fontWeight: 800,
+    textAlign: "center",
+    marginBottom: 4,
+  },
+  rpeLine: { fontSize: 14, fontWeight: 700, opacity: 0.85, marginBottom: 4 },
+  nextTop: {
+    fontSize: 14,
+    opacity: 0.7,
+    marginBottom: 18,
+    textAlign: "center",
+    padding: "0 8px",
+  },
+  ringWrap: {
+    position: "relative",
+    width: 300,
+    height: 300,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  ringCenter: {
+    position: "absolute",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  animalEmoji: { fontSize: 72, lineHeight: 1 },
+  animalName: { fontSize: 20, fontWeight: 800, letterSpacing: "0.04em", marginTop: 2 },
+  phaseIcon: { fontSize: 64 },
+  timer: { fontSize: 34, fontWeight: 700, marginTop: 8, fontVariantNumeric: "tabular-nums" },
+  roundCount: { fontSize: 14, opacity: 0.7, marginTop: 6 },
+  doneMsg: { fontSize: 22, fontWeight: 800, marginTop: 18 },
+  progressBar: {
+    display: "flex",
+    width: "100%",
+    height: 10,
+    borderRadius: 6,
+    overflow: "hidden",
+    marginTop: 22,
+    position: "relative",
+    background: "rgba(255,255,255,0.1)",
+  },
+  progressPointer: {
+    position: "absolute",
+    top: -3,
+    width: 2,
+    height: 16,
+    background: "#F5EFE1",
+    transform: "translateX(-1px)",
+  },
+  labelBar: {
+    display: "flex",
+    width: "100%",
+    marginTop: 4,
+  },
+  labelCell: {
+    display: "flex",
+    justifyContent: "center",
+    overflow: "hidden",
+    padding: "0 1px",
+  },
+  labelText: {
+    fontSize: 8,
+    lineHeight: 1.1,
+    whiteSpace: "nowrap",
+    fontWeight: 700,
+  },
+  seekRow: { display: "flex", gap: 10, width: "100%", marginTop: 16 },
+  seekBtn: {
+    flex: 1,
+    background: "rgba(255,255,255,0.12)",
+    color: "#F5EFE1",
+    border: "1px solid rgba(255,255,255,0.3)",
+    borderRadius: 14,
+    padding: "12px 0",
+    fontSize: 14,
+    fontWeight: 700,
+    cursor: "pointer",
+  },
+  controls: {
+    display: "flex",
+    gap: 14,
+    marginTop: 18,
+    width: "100%",
+  },
+  ctrlBtn: {
+    flex: 1,
+    background: "#F5EFE1",
+    color: "#20302A",
+    border: "none",
+    borderRadius: 16,
+    padding: "16px 0",
+    fontSize: 17,
+    fontWeight: 800,
+    cursor: "pointer",
+  },
+  ctrlBtnGhost: {
+    flex: 1,
+    background: "transparent",
+    color: "#F5EFE1",
+    border: "1px solid rgba(255,255,255,0.4)",
+    borderRadius: 16,
+    padding: "16px 0",
+    fontSize: 17,
+    fontWeight: 700,
+    cursor: "pointer",
+  },
+};
+
+const root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(<HiitTrainer />);
+</script>
+</body>
+</html>
